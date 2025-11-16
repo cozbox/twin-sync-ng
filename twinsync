@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Basic TwinSync v0
+# - Linux only
+# - Menu UI using whiptail
+# - Local Git "twin repo" with simple system snapshot
+# - Optional push/pull to a remote (e.g. GitHub)
+
+TWIN_CONFIG_DIR="${HOME}/.config/twinsync"
+TWIN_CONFIG_FILE="${TWIN_CONFIG_DIR}/config"
+DEFAULT_TWIN_REPO="${HOME}/twinsync-device"
+
+TWIN_REPO=""
+
+ensure_whiptail() {
+  if ! command -v whiptail >/dev/null 2>&1; then
+    echo "TwinSync requires 'whiptail' for its menu UI."
+    echo
+    echo "On Debian/Ubuntu (and similar) you can install it with:"
+    echo "  sudo apt update && sudo apt install -y whiptail"
+    exit 1
+  fi
+}
+
+ensure_git() {
+  if ! command -v git >/dev/null 2>&1; then
+    whiptail --msgbox "TwinSync requires 'git'.\n\nOn Debian/Ubuntu you can install it with:\n  sudo apt update && sudo apt install -y git" 12 70
+    exit 1
+  fi
+}
+
+load_config() {
+  if [[ -f "$TWIN_CONFIG_FILE" ]]; then
+    # shellcheck disable=SC1090
+    . "$TWIN_CONFIG_FILE"
+  fi
+  if [[ -z "${TWIN_REPO:-}" ]]; then
+    TWIN_REPO="$DEFAULT_TWIN_REPO"
+  fi
+}
+
+save_config() {
+  mkdir -p "$TWIN_CONFIG_DIR"
+  cat >"$TWIN_CONFIG_FILE" <<EOF
+TWIN_REPO="$TWIN_REPO"
+EOF
+}
+
+choose_repo_path() {
+  local input
+  input=$(whiptail --inputbox "Directory where the local Twin repo will live:" 10 70 "$TWIN_REPO" --title "TwinSync Init" 3>&1 1>&2 2>&3) || return 1
+  TWIN_REPO="$input"
+}
+
+init_repo() {
+  ensure_whiptail
+  ensure_git
+  load_config
+  choose_repo_path || return
+
+  mkdir -p "$TWIN_REPO"
+  if [[ ! -d "$TWIN_REPO/.git" ]]; then
+    git init "$TWIN_REPO" >/dev/null
+  fi
+
+  save_config
+
+  whiptail --msgbox "Twin repo is set to:\n$TWIN_REPO\n\nThis is a normal Git repository.\n\nIf you already created a private GitHub repo for this device, you can link it later with:\n  cd \"$TWIN_REPO\" && git remote add origin <your-remote-url>" 16 75
+}
+
+collect_system_info() {
+  load_config
+  mkdir -p "$TWIN_REPO/system"
+
+  # Basic OS/kernel info
+  uname -a >"$TWIN_REPO/system/uname.txt" 2>/dev/null || true
+
+  # Distro info
+  if [[ -f /etc/os-release ]]; then
+    cp /etc/os-release "$TWIN_REPO/system/os-release"
+  fi
+
+  # Package list (Debian/Ubuntu - dpkg)
+  if command -v dpkg-query >/dev/null 2>&1; then
+    mkdir -p "$TWIN_REPO/system/packages"
+    dpkg-query -W -f='${Package} ${Version}\n' >"$TWIN_REPO/system/packages/dpkg.txt" 2>/dev/null || true
+  fi
+
+  # Systemd services status snapshot
+  if command -v systemctl >/dev/null 2>&1; then
+    mkdir -p "$TWIN_REPO/system/services"
+    systemctl list-unit-files --type=service --no-pager >"$TWIN_REPO/system/services/unit-files.txt" 2>/dev/null || true
+    systemctl list-units --type=service --no-pager >"$TWIN_REPO/system/services/active-units.txt" 2>/dev/null || true
+  fi
+
+  # A tiny log slice (if journalctl exists)
+  if command -v journalctl >/dev/null 2>&1; then
+    mkdir -p "$TWIN_REPO/system/logs"
+    journalctl -n 200 --no-pager >"$TWIN_REPO/system/logs/journal-tail.txt" 2>/dev/null || true
+  fi
+}
+
+snapshot() {
+  ensure_whiptail
+  ensure_git
+  load_config
+
+  if [[ ! -d "$TWIN_REPO/.git" ]]; then
+    whiptail --msgbox "Twin repo is not initialized.\n\nChoose 'Init / configure twin repo' first." 10 70
+    return
+  fi
+
+  collect_system_info
+
+  (
+    cd "$TWIN_REPO"
+    git add .
+  )
+
+  local msg
+  msg="TwinSync snapshot $(date -Iseconds)"
+
+  if (cd "$TWIN_REPO" && git diff --cached --quiet); then
+    whiptail --msgbox "No changes to snapshot.\n\nTwin repo is already up to date." 10 60
+    return
+  fi
+
+  (
+    cd "$TWIN_REPO"
+    git commit -m "$msg" >/dev/null 2>&1 || true
+  )
+
+  # Try to push if a remote is configured
+  local remotes
+  remotes=$(cd "$TWIN_REPO" && git remote 2>/dev/null || true)
+
+  if [[ -n "$remotes" ]]; then
+    (
+      cd "$TWIN_REPO"
+      git push >/dev/null 2>&1 || true
+    )
+    whiptail --msgbox "Snapshot committed locally.\n\nA 'git push' was attempted. If it failed, you can inspect details by running 'git status' and 'git log' inside:\n$TWIN_REPO" 14 75
+  else
+    whiptail --msgbox "Snapshot committed locally.\n\nNo Git remote is configured yet, so nothing was pushed.\n\nYou can add a GitHub remote with:\n  cd \"$TWIN_REPO\" && git remote add origin <url>" 14 75
+  fi
+}
+
+pull_changes() {
+  ensure_whiptail
+  ensure_git
+  load_config
+
+  if [[ ! -d "$TWIN_REPO/.git" ]]; then
+    whiptail --msgbox "Twin repo is not initialized.\n\nChoose 'Init / configure twin repo' first." 10 70
+    return
+  fi
+
+  local remotes
+  remotes=$(cd "$TWIN_REPO" && git remote 2>/dev/null || true)
+  if [[ -z "$remotes" ]]; then
+    whiptail --msgbox "No Git remote configured.\n\nTo use pull/push with GitHub, add a remote, for example:\n  cd \"$TWIN_REPO\" && git remote add origin <url>" 14 80
+    return
+  fi
+
+  (
+    cd "$TWIN_REPO"
+    git pull --ff-only >/dev/null 2>&1 || true
+  )
+
+  whiptail --msgbox "Pulled latest changes from the remote into the twin repo.\n\nIn this v0 demo, TwinSync does NOT yet apply any changes back to the system.\n\nPlanner/Applier will go here in later versions." 16 80
+}
+
+main_menu() {
+  ensure_whiptail
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 15 70 6 \
+      1 "Init / configure twin repo" \
+      2 "Take snapshot (commit & optional push)" \
+      3 "Pull from remote (no apply yet)" \
+      4 "Exit" 3>&1 1>&2 2>&3) || exit 0
+
+    case "$choice" in
+      1) init_repo ;;
+      2) snapshot ;;
+      3) pull_changes ;;
+      4) exit 0 ;;
+    esac
+  done
+}
+
+# CLI shortcuts for advanced use
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    init) init_repo ;;
+    push|snapshot) snapshot ;;
+    pull) pull_changes ;;
+    *)
+      echo "TwinSync v0"
+      echo "Usage:"
+      echo "  $0             # Launch menu UI"
+      echo "  $0 init        # Init twin repo (no menu)"
+      echo "  $0 push        # Take snapshot (no menu)"
+      echo "  $0 pull        # Pull from remote (no apply yet)"
+      exit 1
+      ;;
+  esac
+else
+  main_menu
+fi
