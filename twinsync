@@ -72,6 +72,154 @@ FS_ROOTS="$fs"
 EOF
 }
 
+root_in_list() {
+  local needle="$1"
+  local haystack="$2"
+  local entry
+  for entry in $haystack; do
+    if [[ "$entry" = "$needle" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+discover_root_candidates() {
+  # shellcheck disable=SC2034 # referenced via nameref
+  local -n _out=$1
+  local -A seen=()
+  local path
+  local -a seeds=(
+    "/etc"
+    "/usr/local/etc"
+    "/usr/local/bin"
+    "/var/www"
+    "$HOME"
+    "$HOME/.config"
+    "$HOME/.local"
+    "$HOME/.local/share"
+    "$HOME/.local/bin"
+    "$HOME/.ssh"
+    "$HOME/bin"
+  )
+
+  for path in "${seeds[@]}"; do
+    [[ -d "$path" ]] || continue
+    [[ -n "${seen[$path]:-}" ]] && continue
+    seen[$path]=1
+    _out+=("$path")
+  done
+
+  if [[ -d "$HOME" ]]; then
+    while IFS= read -r sub; do
+      [[ -d "$sub" ]] || continue
+      [[ "$sub" == *' '* ]] && continue
+      [[ -n "${seen[$sub]:-}" ]] && continue
+      seen[$sub]=1
+      _out+=("$sub")
+    done < <(find "$HOME" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | head -n 15)
+  fi
+}
+
+configure_filesystem_roots() {
+  ensure_whiptail
+  load_config
+
+  local current_roots="${FS_ROOTS:-$DEFAULT_FS_ROOTS}"
+  local -a candidates=()
+  discover_root_candidates candidates
+
+  local -a checklist_args=()
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    local state="OFF"
+    if root_in_list "$candidate" "$current_roots"; then
+      state="ON"
+    fi
+    checklist_args+=("$candidate" "$candidate" "$state")
+  done
+
+  local selected_text=""
+  if ((${#checklist_args[@]} > 0)); then
+    if ! selected_text=$(whiptail --separate-output --checklist \
+        "Select directories to mirror into the twin repo.\nSpace toggles, Enter accepts.\n\nTwin will store every regular file under 1MB inside these roots." \
+        22 90 12 "${checklist_args[@]}" 3>&1 1>&2 2>&3); then
+      return
+    fi
+  fi
+
+  local -a chosen_roots=()
+  if [[ -n "$selected_text" ]]; then
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      chosen_roots+=("$line")
+    done <<<"$selected_text"
+  fi
+
+  local extra_msg
+  extra_msg="Add any other directories (space-separated) to mirror.\nPaths may start with '~'.\nLeave blank to skip."
+  local extras=""
+  if ! extras=$(whiptail --inputbox "$extra_msg" 14 90 "" --title "Additional filesystem roots" 3>&1 1>&2 2>&3); then
+    return
+  fi
+
+  if [[ -n "$extras" ]]; then
+    local entry
+    for entry in $extras; do
+      [[ -z "$entry" ]] && continue
+      entry="${entry/#\~/$HOME}"
+      entry="${entry%/}"
+      chosen_roots+=("$entry")
+    done
+  fi
+
+  if ((${#chosen_roots[@]} == 0)); then
+    whiptail --msgbox "No directories selected. Keeping previous value:\n$current_roots" 12 80
+    return
+  fi
+
+  local -a unique_roots=()
+  local -A seen=()
+  for candidate in "${chosen_roots[@]}"; do
+    [[ -z "$candidate" ]] && continue
+    candidate="${candidate%/}"
+    [[ -z "$candidate" ]] && continue
+    if [[ -n "${seen[$candidate]:-}" ]]; then
+      continue
+    fi
+    seen[$candidate]=1
+    unique_roots+=("$candidate")
+  done
+
+  local -a valid_roots=()
+  local -a invalid_roots=()
+  for candidate in "${unique_roots[@]}"; do
+    if [[ -d "$candidate" ]]; then
+      valid_roots+=("$candidate")
+    else
+      invalid_roots+=("$candidate")
+    fi
+  done
+
+  if ((${#valid_roots[@]} == 0)); then
+    whiptail --msgbox "All selected directories do not exist. Nothing changed." 12 80
+    return
+  fi
+
+  FS_ROOTS="${valid_roots[*]}"
+  save_config
+
+  local summary
+  summary="TwinSync will snapshot these directories:\n"
+  summary+="$(printf '%s\n' "${valid_roots[@]}")"
+  if ((${#invalid_roots[@]} > 0)); then
+    summary+="\nSkipped (not found):\n"
+    summary+="$(printf '%s\n' "${invalid_roots[@]}")"
+  fi
+
+  whiptail --msgbox "$summary" 20 90
+}
+
 choose_repo_path() {
   local input
   input=$(whiptail --inputbox "Directory where the local Twin repo will live:" 10 70 "$TWIN_REPO" --title "TwinSync Init" 3>&1 1>&2 2>&3) || return 1
@@ -833,14 +981,101 @@ setup_menu() {
       1 "Init / configure local Twin repo (create local Git)" \
       2 "GitHub setup (remember username/token + device repo)" \
       3 "Install/check dependencies (Debian/Ubuntu)" \
-      4 "Show current TwinSync config" \
-      5 "Back to main menu" 3>&1 1>&2 2>&3) || return
+      4 "Configure filesystem roots (directories to mirror)" \
+      5 "Show current TwinSync config" \
+      6 "Back to main menu" 3>&1 1>&2 2>&3) || return
     case "$choice" in
       1) init_repo ;;
       2) setup_github_device_remote ;;
       3) install_dependencies ;;
-      4) show_config ;;
-      5) return ;;
+      4) configure_filesystem_roots ;;
+      5) show_config ;;
+      6) return ;;
+    esac
+  done
+}
+
+snapshot_sync_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync snapshot / sync" --menu "Choose an action:" 18 90 6 \
+      1 "Take snapshot (update twin + commit + optional push)" \
+      2 "Pull from remote (update twin repo)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) snapshot ;;
+      2) pull_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+files_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync files" --menu "Choose an action:" 18 90 6 \
+      1 "Plan file changes (twin -> system)" \
+      2 "Apply file changes (twin -> system)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_file_changes ;;
+      2) apply_file_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+packages_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync packages" --menu "Choose an action:" 18 90 6 \
+      1 "Plan package changes (apt, twin -> system)" \
+      2 "Apply package changes (apt, twin -> system)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_package_changes ;;
+      2) apply_package_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+services_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync services" --menu "Choose an action:" 18 90 6 \
+      1 "Plan service changes (systemd, twin -> system)" \
+      2 "Apply service changes (systemd, twin -> system)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_service_changes ;;
+      2) apply_service_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+startup_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync startup" --menu "Choose an action:" 18 90 6 \
+      1 "Plan startup changes (user crontab)" \
+      2 "Apply startup changes (user crontab)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_startup_changes ;;
+      2) apply_startup_changes ;;
+      3) return ;;
     esac
   done
 }
@@ -850,33 +1085,25 @@ main_menu() {
   load_config
   while true; do
     local choice
-    choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 22 84 12 \
-      1  "Setup / utilities" \
-      2  "Take snapshot (update twin + commit + optional push)" \
-      3  "Pull from remote (update twin repo)" \
-      4  "Plan file changes (twin -> system)" \
-      5  "Apply file changes (twin -> system)" \
-      6  "Plan package changes (apt, twin -> system)" \
-      7  "Apply package changes (apt, twin -> system)" \
-      8  "Plan service changes (systemd, twin -> system)" \
-      9  "Apply service changes (systemd, twin -> system)" \
-      10 "Plan startup changes (user crontab)" \
-      11 "Apply startup changes (user crontab)" \
-      12 "Time Machine / history" 3>&1 1>&2 2>&3) || exit 0
+    choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 20 84 10 \
+      1 "Setup / utilities" \
+      2 "Snapshot / sync" \
+      3 "Files (plan/apply)" \
+      4 "Packages (plan/apply)" \
+      5 "Services (plan/apply)" \
+      6 "Startup (plan/apply)" \
+      7 "Time Machine / history" \
+      8 "Exit" 3>&1 1>&2 2>&3) || exit 0
 
     case "$choice" in
-      1)  setup_menu ;;
-      2)  snapshot ;;
-      3)  pull_changes ;;
-      4)  plan_file_changes ;;
-      5)  apply_file_changes ;;
-      6)  plan_package_changes ;;
-      7)  apply_package_changes ;;
-      8)  plan_service_changes ;;
-      9)  apply_service_changes ;;
-      10) plan_startup_changes ;;
-      11) apply_startup_changes ;;
-      12) time_machine_menu ;;
+      1) setup_menu ;;
+      2) snapshot_sync_menu ;;
+      3) files_menu ;;
+      4) packages_menu ;;
+      5) services_menu ;;
+      6) startup_menu ;;
+      7) time_machine_menu ;;
+      8) exit 0 ;;
     esac
   done
 }
