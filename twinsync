@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Basic TwinSync v0
+# TwinSync v0.1
 # - Linux only
 # - Menu UI using whiptail
 # - Local Git "twin repo" with simple system snapshot
-# - Optional push/pull to a remote (e.g. GitHub)
+# - Optional GitHub integration (creates/links private per-device repo)
 
 TWIN_CONFIG_DIR="${HOME}/.config/twinsync"
 TWIN_CONFIG_FILE="${TWIN_CONFIG_DIR}/config"
 DEFAULT_TWIN_REPO="${HOME}/twinsync-device"
 
 TWIN_REPO=""
+GITHUB_USER=""
+GITHUB_TOKEN=""
+GITHUB_DEVICE_REPO=""
 
 ensure_whiptail() {
   if ! command -v whiptail >/dev/null 2>&1; then
@@ -30,6 +33,13 @@ ensure_git() {
   fi
 }
 
+ensure_curl() {
+  if ! command -v curl >/dev/null 2>&1; then
+    whiptail --msgbox "TwinSync needs 'curl' to talk to GitHub.\n\nOn Debian/Ubuntu you can install it with:\n  sudo apt update && sudo apt install -y curl" 14 70
+    exit 1
+  fi
+}
+
 load_config() {
   if [[ -f "$TWIN_CONFIG_FILE" ]]; then
     # shellcheck disable=SC1090
@@ -44,6 +54,9 @@ save_config() {
   mkdir -p "$TWIN_CONFIG_DIR"
   cat >"$TWIN_CONFIG_FILE" <<EOF
 TWIN_REPO="$TWIN_REPO"
+GITHUB_USER="${GITHUB_USER:-}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+GITHUB_DEVICE_REPO="${GITHUB_DEVICE_REPO:-}"
 EOF
 }
 
@@ -51,6 +64,74 @@ choose_repo_path() {
   local input
   input=$(whiptail --inputbox "Directory where the local Twin repo will live:" 10 70 "$TWIN_REPO" --title "TwinSync Init" 3>&1 1>&2 2>&3) || return 1
   TWIN_REPO="$input"
+}
+
+configure_github() {
+  ensure_whiptail
+  ensure_curl
+  load_config
+
+  if [[ -z "${GITHUB_USER:-}" ]]; then
+    GITHUB_USER=$(whiptail --inputbox "GitHub username:" 10 60 "${GITHUB_USER:-}" --title "TwinSync GitHub Setup" 3>&1 1>&2 2>&3) || return 1
+  fi
+
+  if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+    local msg
+    msg="Enter a GitHub personal access token with 'repo' access.\n\nIt will be stored in plain text on this machine at:\n$TWIN_CONFIG_FILE\n\nUse a token you can revoke any time from GitHub settings."
+    GITHUB_TOKEN=$(whiptail --passwordbox "$msg" 15 70 --title "TwinSync GitHub Token" 3>&1 1>&2 2>&3) || return 1
+  fi
+
+  save_config
+}
+
+setup_github_device_remote() {
+  ensure_git
+  ensure_curl
+  load_config
+
+  if [[ ! -d "$TWIN_REPO/.git" ]]; then
+    whiptail --msgbox "Twin repo is not initialized yet.\nRun 'Init / configure twin repo' first." 10 70
+    return 1
+  fi
+
+  configure_github || return 1
+
+  local default_name
+  default_name="${GITHUB_DEVICE_REPO:-twin-$(hostname 2>/dev/null || echo device)}"
+
+  local repo_name
+  repo_name=$(whiptail --inputbox "Name for this device's private GitHub repo:" 10 70 "$default_name" --title "TwinSync GitHub Repo Name" 3>&1 1>&2 2>&3) || return 1
+
+  GITHUB_DEVICE_REPO="$repo_name"
+  save_config
+
+  local api_url
+  api_url="https://api.github.com/user/repos"
+  local payload
+  payload=$(printf '{"name":"%s","private":true}' "$GITHUB_DEVICE_REPO")
+
+  local http_code
+  http_code=$(curl -s -o /tmp/twinsync-create-repo.log -w "%{http_code}" -u "$GITHUB_USER:$GITHUB_TOKEN" "$api_url" -d "$payload")
+
+  if [[ "$http_code" = "201" ]]; then
+    : # created
+  elif [[ "$http_code" = "422" ]]; then
+    : # already exists, that's OK
+  else
+    whiptail --msgbox "GitHub repo create/link failed.\nHTTP status: $http_code\n\nCheck your GitHub username, token and permissions.\n\nRaw response was saved to /tmp/twinsync-create-repo.log" 16 75
+    return 1
+  fi
+
+  (
+    cd "$TWIN_REPO"
+    if git remote | grep -q '^origin$'; then
+      git remote remove origin >/dev/null 2>&1 || true
+    fi
+    git remote add origin "https://github.com/$GITHUB_USER/$GITHUB_DEVICE_REPO.git" 2>/dev/null || true
+    git branch -M main >/dev/null 2>&1 || true
+  )
+
+  whiptail --msgbox "Linked local twin repo to GitHub:\nhttps://github.com/$GITHUB_USER/$GITHUB_DEVICE_REPO" 12 80
 }
 
 init_repo() {
@@ -66,7 +147,11 @@ init_repo() {
 
   save_config
 
-  whiptail --msgbox "Twin repo is set to:\n$TWIN_REPO\n\nThis is a normal Git repository.\n\nIf you already created a private GitHub repo for this device, you can link it later with:\n  cd \"$TWIN_REPO\" && git remote add origin <your-remote-url>" 16 75
+  if whiptail --yesno "Do you want TwinSync to create/link a private GitHub repo for this device and remember your GitHub details so you don't have to enter them each time?" 14 75; then
+    setup_github_device_remote || true
+  fi
+
+  whiptail --msgbox "Twin repo is set to:\n$TWIN_REPO\n\nThis is a normal Git repository used as this device's twin." 12 75
 }
 
 collect_system_info() {
@@ -142,7 +227,7 @@ snapshot() {
     )
     whiptail --msgbox "Snapshot committed locally.\n\nA 'git push' was attempted. If it failed, you can inspect details by running 'git status' and 'git log' inside:\n$TWIN_REPO" 14 75
   else
-    whiptail --msgbox "Snapshot committed locally.\n\nNo Git remote is configured yet, so nothing was pushed.\n\nYou can add a GitHub remote with:\n  cd \"$TWIN_REPO\" && git remote add origin <url>" 14 75
+    whiptail --msgbox "Snapshot committed locally.\n\nNo Git remote is configured yet, so nothing was pushed.\n\nYou can set up GitHub integration from the menu." 14 75
   fi
 }
 
@@ -159,7 +244,7 @@ pull_changes() {
   local remotes
   remotes=$(cd "$TWIN_REPO" && git remote 2>/dev/null || true)
   if [[ -z "$remotes" ]]; then
-    whiptail --msgbox "No Git remote configured.\n\nTo use pull/push with GitHub, add a remote, for example:\n  cd \"$TWIN_REPO\" && git remote add origin <url>" 14 80
+    whiptail --msgbox "No Git remote configured.\n\nUse the GitHub setup option in the menu to create/link a private repo for this device." 14 80
     return
   fi
 
@@ -168,24 +253,26 @@ pull_changes() {
     git pull --ff-only >/dev/null 2>&1 || true
   )
 
-  whiptail --msgbox "Pulled latest changes from the remote into the twin repo.\n\nIn this v0 demo, TwinSync does NOT yet apply any changes back to the system.\n\nPlanner/Applier will go here in later versions." 16 80
+  whiptail --msgbox "Pulled latest changes from the remote into the twin repo.\n\nIn this v0.1 demo, TwinSync does NOT yet apply any changes back to the system.\n\nPlanner/Applier will go here in later versions." 16 80
 }
 
 main_menu() {
   ensure_whiptail
   while true; do
     local choice
-    choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 15 70 6 \
-      1 "Init / configure twin repo" \
-      2 "Take snapshot (commit & optional push)" \
-      3 "Pull from remote (no apply yet)" \
-      4 "Exit" 3>&1 1>&2 2>&3) || exit 0
+    choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 17 76 8 \
+      1 "Init / configure local Twin repo" \
+      2 "GitHub setup (remember username/token + device repo)" \
+      3 "Take snapshot (commit & optional push)" \
+      4 "Pull from remote (no apply yet)" \
+      5 "Exit" 3>&1 1>&2 2>&3) || exit 0
 
     case "$choice" in
       1) init_repo ;;
-      2) snapshot ;;
-      3) pull_changes ;;
-      4) exit 0 ;;
+      2) setup_github_device_remote ;;
+      3) snapshot ;;
+      4) pull_changes ;;
+      5) exit 0 ;;
     esac
   done
 }
@@ -196,13 +283,15 @@ if [[ $# -gt 0 ]]; then
     init) init_repo ;;
     push|snapshot) snapshot ;;
     pull) pull_changes ;;
+    github-setup) setup_github_device_remote ;;
     *)
-      echo "TwinSync v0"
+      echo "TwinSync v0.1"
       echo "Usage:"
-      echo "  $0             # Launch menu UI"
-      echo "  $0 init        # Init twin repo (no menu)"
-      echo "  $0 push        # Take snapshot (no menu)"
-      echo "  $0 pull        # Pull from remote (no apply yet)"
+      echo "  $0                # Launch menu UI"
+      echo "  $0 init           # Init twin repo (no menu)"
+      echo "  $0 push           # Take snapshot (no menu)"
+      echo "  $0 pull           # Pull from remote (no apply yet)"
+      echo "  $0 github-setup   # GitHub credentials + device repo setup"
       exit 1
       ;;
   esac
