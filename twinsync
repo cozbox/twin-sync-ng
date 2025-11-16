@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# TwinSync v0.1
+# TwinSync v0.2
 # - Linux only
 # - Menu UI using whiptail
-# - Local Git "twin repo" with simple system snapshot
+# - Local Git "twin repo" with system + filesystem snapshot
 # - Optional GitHub integration (creates/links private per-device repo)
+# - File-level Planner + Applier (twin -> system) for configs
 
 TWIN_CONFIG_DIR="${HOME}/.config/twinsync"
 TWIN_CONFIG_FILE="${TWIN_CONFIG_DIR}/config"
 DEFAULT_TWIN_REPO="${HOME}/twinsync-device"
+DEFAULT_FS_ROOTS="/etc ${HOME}/.config"
 
 TWIN_REPO=""
 GITHUB_USER=""
 GITHUB_TOKEN=""
 GITHUB_DEVICE_REPO=""
+FS_ROOTS=""
 
 ensure_whiptail() {
   if ! command -v whiptail >/dev/null 2>&1; then
@@ -48,15 +51,21 @@ load_config() {
   if [[ -z "${TWIN_REPO:-}" ]]; then
     TWIN_REPO="$DEFAULT_TWIN_REPO"
   fi
+  if [[ -z "${FS_ROOTS:-}" ]]; then
+    FS_ROOTS="$DEFAULT_FS_ROOTS"
+  fi
 }
 
 save_config() {
   mkdir -p "$TWIN_CONFIG_DIR"
+  local fs
+  fs="${FS_ROOTS:-$DEFAULT_FS_ROOTS}"
   cat >"$TWIN_CONFIG_FILE" <<EOF
 TWIN_REPO="$TWIN_REPO"
 GITHUB_USER="${GITHUB_USER:-}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 GITHUB_DEVICE_REPO="${GITHUB_DEVICE_REPO:-}"
+FS_ROOTS="$fs"
 EOF
 }
 
@@ -108,7 +117,7 @@ setup_github_device_remote() {
   local api_url
   api_url="https://api.github.com/user/repos"
   local payload
-  payload=$(printf '{"name":"%s","private":true}' "$GITHUB_DEVICE_REPO")
+  payload=$(printf '{\"name\":\"%s\",\"private\":true}' "$GITHUB_DEVICE_REPO")
 
   local http_code
   http_code=$(curl -s -o /tmp/twinsync-create-repo.log -w "%{http_code}" -u "$GITHUB_USER:$GITHUB_TOKEN" "$api_url" -d "$payload")
@@ -186,17 +195,155 @@ collect_system_info() {
   fi
 }
 
+collect_filesystem_snapshot() {
+  load_config
+  mkdir -p "$TWIN_REPO/filesystem"
+  local root
+
+  for root in $FS_ROOTS; do
+    if [[ ! -d "$root" ]]; then
+      continue
+    fi
+    if [[ "$root" = "/" ]]; then
+      continue
+    fi
+    while IFS= read -r file; do
+      local rel dest
+      rel="${file#/}"
+      dest="$TWIN_REPO/filesystem/$rel"
+      mkdir -p "$(dirname "$dest")" 2>/dev/null || true
+      cp "$file" "$dest" 2>/dev/null || true
+    done < <(find "$root" -type f -size -1024k 2>/dev/null)
+  done
+}
+
+build_file_plan() {
+  load_config
+  local plan_file
+  plan_file="$TWIN_REPO/plan-files.txt"
+  : >"$plan_file"
+
+  if [[ ! -d "$TWIN_REPO/filesystem" ]]; then
+    echo "$plan_file 0 0"
+    return
+  fi
+
+  local twin_file rel sys_path
+  local replace_count=0
+  local create_count=0
+
+  while IFS= read -r twin_file; do
+    rel="${twin_file#"$TWIN_REPO/filesystem/"}"
+    sys_path="/$rel"
+    if [[ ! -e "$sys_path" ]]; then
+      echo "CREATE $sys_path $twin_file" >>"$plan_file"
+      ((create_count++)) || true
+    else
+      if ! cmp -s "$twin_file" "$sys_path"; then
+        echo "REPLACE $sys_path $twin_file" >>"$plan_file"
+        ((replace_count++)) || true
+      fi
+    fi
+  done < <(find "$TWIN_REPO/filesystem" -type f 2>/dev/null | sort)
+
+  echo "$plan_file $replace_count $create_count"
+}
+
+plan_file_changes() {
+  ensure_whiptail
+  load_config
+
+  if [[ ! -d "$TWIN_REPO/.git" ]]; then
+    whiptail --msgbox "Twin repo is not initialized.\n\nChoose 'Init / configure local Twin repo' first." 10 70
+    return
+  fi
+
+  local result plan_file replace_count create_count
+  result=$(build_file_plan)
+  plan_file=$(echo "$result" | awk '{print $1}')
+  replace_count=$(echo "$result" | awk '{print $2}')
+  create_count=$(echo "$result" | awk '{print $3}')
+
+  if [[ ! -s "$plan_file" ]]; then
+    whiptail --msgbox "No file differences found between twin and system for the configured roots." 10 75
+    return
+  fi
+
+  local preview
+  preview=$(head -n 10 "$plan_file" 2>/dev/null || echo "(plan file has more entries)")
+
+  local msg
+  msg="Planned file changes (twin -> system):\n\nReplace: $replace_count files\nCreate:  $create_count files\n\nRoots being considered:\n$FS_ROOTS\n\nFirst lines of plan-files.txt:\n$preview\n\nFull plan saved at:\n$plan_file"
+
+  whiptail --msgbox "$msg" 20 80
+}
+
+apply_file_changes() {
+  ensure_whiptail
+  load_config
+
+  if [[ ! -d "$TWIN_REPO/.git" ]]; then
+    whiptail --msgbox "Twin repo is not initialized.\n\nChoose 'Init / configure local Twin repo' first." 10 70
+    return
+  fi
+
+  local result plan_file replace_count create_count
+  result=$(build_file_plan)
+  plan_file=$(echo "$result" | awk '{print $1}')
+  replace_count=$(echo "$result" | awk '{print $2}')
+  create_count=$(echo "$result" | awk '{print $3}')
+
+  if [[ ! -s "$plan_file" ]]; then
+    whiptail --msgbox "No file changes to apply.\nTwin and system already match for the configured roots." 10 75
+    return
+  fi
+
+  local confirm_msg
+  confirm_msg="About to apply file changes (twin -> system).\n\nReplace: $replace_count files\nCreate:  $create_count files\n\nBackups will be made as <path>.twinbak-YYYYMMDDHHMMSS before replacements where possible.\n\nIf some target paths are under /etc or other system dirs, you may need to run TwinSync with sudo for this to fully succeed.\n\nApply these file changes now?"
+
+  if ! whiptail --yesno "$confirm_msg" 20 80; then
+    return
+  fi
+
+  local ok=0
+  local fail=0
+  local action sys_path twin_file
+
+  while read -r action sys_path twin_file; do
+    if [[ -z "$action" ]]; then
+      continue
+    fi
+    if [[ "$action" = "REPLACE" && -e "$sys_path" ]]; then
+      local backup
+      backup="${sys_path}.twinbak-$(date +%Y%m%d%H%M%S)"
+      cp "$sys_path" "$backup" 2>/dev/null || true
+    fi
+    mkdir -p "$(dirname "$sys_path")" 2>/dev/null || true
+    if cp "$twin_file" "$sys_path" 2>/dev/null; then
+      ((ok++)) || true
+    else
+      ((fail++)) || true
+    fi
+  done <"$plan_file"
+
+  local result_msg
+  result_msg="File apply finished.\n\nSucceeded: $ok\nFailed (check permissions/paths): $fail\n\nIf some paths are under system directories (like /etc), re-run TwinSync with higher privileges if needed."
+
+  whiptail --msgbox "$result_msg" 16 80
+}
+
 snapshot() {
   ensure_whiptail
   ensure_git
   load_config
 
   if [[ ! -d "$TWIN_REPO/.git" ]]; then
-    whiptail --msgbox "Twin repo is not initialized.\n\nChoose 'Init / configure twin repo' first." 10 70
+    whiptail --msgbox "Twin repo is not initialized.\n\nChoose 'Init / configure local Twin repo' first." 10 70
     return
   fi
 
   collect_system_info
+  collect_filesystem_snapshot
 
   (
     cd "$TWIN_REPO"
@@ -237,7 +384,7 @@ pull_changes() {
   load_config
 
   if [[ ! -d "$TWIN_REPO/.git" ]]; then
-    whiptail --msgbox "Twin repo is not initialized.\n\nChoose 'Init / configure twin repo' first." 10 70
+    whiptail --msgbox "Twin repo is not initialized.\n\nChoose 'Init / configure local Twin repo' first." 10 70
     return
   fi
 
@@ -253,26 +400,30 @@ pull_changes() {
     git pull --ff-only >/dev/null 2>&1 || true
   )
 
-  whiptail --msgbox "Pulled latest changes from the remote into the twin repo.\n\nIn this v0.1 demo, TwinSync does NOT yet apply any changes back to the system.\n\nPlanner/Applier will go here in later versions." 16 80
+  whiptail --msgbox "Pulled latest changes from the remote into the twin repo.\n\nIn this v0.2 demo, TwinSync applies file changes only when you explicitly choose 'Apply file changes' from the menu." 16 80
 }
 
 main_menu() {
   ensure_whiptail
   while true; do
     local choice
-    choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 17 76 8 \
+    choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 22 80 10 \
       1 "Init / configure local Twin repo" \
       2 "GitHub setup (remember username/token + device repo)" \
-      3 "Take snapshot (commit & optional push)" \
-      4 "Pull from remote (no apply yet)" \
-      5 "Exit" 3>&1 1>&2 2>&3) || exit 0
+      3 "Plan file changes (twin -> system)" \
+      4 "Apply file changes (twin -> system)" \
+      5 "Take snapshot (commit & optional push)" \
+      6 "Pull from remote (update twin)" \
+      7 "Exit" 3>&1 1>&2 2>&3) || exit 0
 
     case "$choice" in
       1) init_repo ;;
       2) setup_github_device_remote ;;
-      3) snapshot ;;
-      4) pull_changes ;;
-      5) exit 0 ;;
+      3) plan_file_changes ;;
+      4) apply_file_changes ;;
+      5) snapshot ;;
+      6) pull_changes ;;
+      7) exit 0 ;;
     esac
   done
 }
@@ -284,14 +435,18 @@ if [[ $# -gt 0 ]]; then
     push|snapshot) snapshot ;;
     pull) pull_changes ;;
     github-setup) setup_github_device_remote ;;
+    plan-files) plan_file_changes ;;
+    apply-files) apply_file_changes ;;
     *)
-      echo "TwinSync v0.1"
+      echo "TwinSync v0.2"
       echo "Usage:"
       echo "  $0                # Launch menu UI"
       echo "  $0 init           # Init twin repo (no menu)"
       echo "  $0 push           # Take snapshot (no menu)"
-      echo "  $0 pull           # Pull from remote (no apply yet)"
+      echo "  $0 pull           # Pull from remote (update twin)"
       echo "  $0 github-setup   # GitHub credentials + device repo setup"
+      echo "  $0 plan-files     # Plan file changes (twin -> system)"
+      echo "  $0 apply-files    # Apply file changes (twin -> system)"
       exit 1
       ;;
   esac
