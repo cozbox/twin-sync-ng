@@ -61,7 +61,7 @@ class MirrorFilesPlugin:
                         
                         files_data.append({
                             "root": str(root),
-                            "path": "/" + str(file_path.relative_to("/")),
+                            "path": str(file_path),  # Full absolute path
                             "relative": relative,
                             "size": stat.st_size,
                             "mode": oct(stat.st_mode)[-4:],

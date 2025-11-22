@@ -151,7 +151,10 @@ def plan_menu() -> None:
             if actions:
                 summary.append(f"{plugin_name}: {len(actions)} action(s)")
         
-        msgbox("Plan Complete", "\n".join(summary) + f"\n\nTotal: {total_actions} action(s)\n\nReview plan at: {paths.get_plan_dir() / 'latest.yaml'}")
+        # Get plan directory
+        repo_root = paths.get_device_repo_root()
+        plan_file = paths.get_plan_dir(repo_root) / 'latest.yaml'
+        msgbox("Plan Complete", "\n".join(summary) + f"\n\nTotal: {total_actions} action(s)\n\nReview plan at: {plan_file}")
     except Exception as e:
         msgbox("Error", f"Planning failed:\n{e}")
 
@@ -159,7 +162,8 @@ def plan_menu() -> None:
 def apply_menu() -> None:
     """Apply the latest plan."""
     try:
-        plan_path = paths.get_plan_dir() / "latest.yaml"
+        repo_root = paths.get_device_repo_root()
+        plan_path = paths.get_plan_dir(repo_root) / "latest.yaml"
         if not plan_path.exists():
             msgbox("No Plan", "No plan found.\n\nRun 'Plan' first to generate a plan.")
             return

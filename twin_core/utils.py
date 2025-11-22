@@ -140,12 +140,6 @@ def git_commit(repo_path: Path, message: str) -> bool:
             return True
         
         # Ensure git user is configured (use generic if not set)
-        subprocess.run(
-            ["git", "config", "user.email"],
-            cwd=repo_path,
-            capture_output=True,
-            check=False,
-        )
         result = subprocess.run(
             ["git", "config", "user.email"],
             cwd=repo_path,
