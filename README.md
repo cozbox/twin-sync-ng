@@ -49,6 +49,30 @@ Running `./twinsync` launches a whiptail menu that starts simple and then branch
   - Configure filesystem roots to mirror
   - Link or create GitHub device repo
   - Install / check dependencies (Debian/Ubuntu)
+  - Update TwinSync program (respects tracked remote/branch, logs fetch/pull to `/tmp/twinsync-update.log`)
+  - Show current TwinSync config
+- **Snapshot & sync**
+  - Take snapshot (update twin + commit + try push)
+  - Pull from remote (refresh twin repo)
+- **Plan & apply changes**
+  - Files (plan/apply)
+  - Packages (plan/apply)
+  - Services (plan/apply)
+  - Startup (plan/apply)
+- **Time Machine / history**
+
+You can exit from any submenu back up to the main screen. The CLI also has subcommands (see `./twinsync --help`).
+
+## Quick start
+
+On a Debian/Ubuntu-ish system:
+
+
+- **Setup**
+  - Init / configure local Twin repo
+  - Configure filesystem roots to mirror
+  - Link or create GitHub device repo
+  - Install / check dependencies (Debian/Ubuntu)
   - Update TwinSync program (git pull with remote/branch detection + log)
   - Show current TwinSync config
 - **Snapshot & sync**

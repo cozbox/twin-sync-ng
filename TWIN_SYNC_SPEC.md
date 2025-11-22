@@ -84,6 +84,7 @@ All appliers count successes/failures and display the summary.
 
 ## 7. User interface
 - **Whiptail main menu** – setup, snapshot/sync, a dedicated Plan & Apply hub (routes to files/packages/services/startup), and Time Machine.
+- **Setup submenu** – init local twin repo, choose filesystem roots, link/create GitHub device repo, install dependencies, update the TwinSync program from GitHub (uses the tracked remote/branch when available, falls back to a detected remote branch, and logs fetch/pull output to `/tmp/twinsync-update.log`), view config.
 - **Setup submenu** – init local twin repo, choose filesystem roots, link/create GitHub device repo, install dependencies, update the TwinSync program from GitHub (respects the tracked remote/branch and logs output), view config.
 - **Whiptail main menu** – entry points for setup, snapshot, pull, plan/apply per domain, and Time Machine.
 - **Setup submenu** – init local twin repo, configure GitHub device repo, install dependencies, pick filesystem roots, view config.
