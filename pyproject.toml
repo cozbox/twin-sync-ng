@@ -1,0 +1,9 @@
+[project]
+name = "twin-sync"
+version = "0.0.0"
+description = "TwinSync++ prototype CLI"
+requires-python = ">=3.10"
+dependencies = ["PyYAML", "jsonschema"]
+
+[project.scripts]
+twin = "twin_core.cli:main"

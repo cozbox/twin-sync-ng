@@ -1,0 +1,7 @@
+{
+  "name": "logs.systemd_journal",
+  "kind": "logs",
+  "provides": {"logs_fragments": ["systemd_journal"]},
+  "dependencies": [],
+  "entrypoint": "twin_core.plugins_runtime.logs_systemd_journal:SystemdJournalLogsPlugin"
+}
