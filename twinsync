@@ -10,6 +10,7 @@ set -euo pipefail
 # - Planner/Applier: files, apt packages, systemd services, user crontab
 # - Time Machine: choose git snapshot and reset twin repo to it
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TWIN_CONFIG_DIR="${HOME}/.config/twinsync"
 TWIN_CONFIG_FILE="${TWIN_CONFIG_DIR}/config"
 
@@ -248,6 +249,51 @@ install_dependencies() {
     whiptail --msgbox "Dependency install commands finished.\n\nCheck the terminal for any warnings or errors." 14 75
   else
     whiptail --msgbox "Dependency install appears to have failed.\n\nCheck the terminal output for details." 14 75
+  fi
+}
+
+update_twinsync_program() {
+  ensure_whiptail
+  ensure_git
+
+  if [[ ! -d "$SCRIPT_DIR/.git" ]]; then
+    whiptail --msgbox "TwinSync directory is not a Git checkout.\n\nClone https://github.com/niyisurvey/twin-sync to enable in-place updates." 14 80
+    return
+  fi
+
+  local dirty
+  if (cd "$SCRIPT_DIR" && ! git diff --quiet --ignore-submodules HEAD); then
+    dirty=1
+  else
+    dirty=0
+  fi
+
+  if [[ "$dirty" -eq 1 ]]; then
+    if ! whiptail --yesno "Local changes detected in the TwinSync directory.\n\nA git pull could overwrite them.\n\nProceed anyway?" 14 80; then
+      return
+    fi
+  fi
+
+  local remote branch tracking
+  if tracking=$(cd "$SCRIPT_DIR" && git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null); then
+    remote="${tracking%%/*}"
+    branch="${tracking#*/}"
+  else
+    remote="origin"
+    branch=$(cd "$SCRIPT_DIR" && git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+  fi
+
+  if ! (cd "$SCRIPT_DIR" && git remote get-url "$remote" >/dev/null 2>&1); then
+    whiptail --msgbox "No Git remote configured for the TwinSync directory.\n\nSet a remote (e.g. origin) to enable in-place updates." 14 90
+    return
+  fi
+
+  local log_file
+  log_file="/tmp/twinsync-update.log"
+  if (cd "$SCRIPT_DIR" && git fetch "$remote" >/dev/null 2>&1 && git pull --ff-only "$remote" "$branch" >/dev/null 2>"$log_file"); then
+    whiptail --msgbox "TwinSync program updated from $remote/$branch.\n\nRestart TwinSync to run the newest version." 14 85
+  else
+    whiptail --msgbox "TwinSync update failed.\n\nCheck $log_file for git output, resolve any conflicts, and try again." 14 85
   fi
 }
 
@@ -977,6 +1023,22 @@ setup_menu() {
   load_config
   while true; do
     local choice
+    choice=$(whiptail --title "TwinSync setup" --menu "Prepare the twin and choose what gets mirrored:" 20 90 8 \
+      1 "Init / configure local twin repo" \
+      2 "Configure filesystem roots to mirror" \
+      3 "Link or create GitHub device repo" \
+      4 "Install / check dependencies (Debian/Ubuntu)" \
+      5 "Update TwinSync program (git pull)" \
+      6 "Show current TwinSync config" \
+      7 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) init_repo ;;
+      2) configure_filesystem_roots ;;
+      3) setup_github_device_remote ;;
+      4) install_dependencies ;;
+      5) update_twinsync_program ;;
+      6) show_config ;;
+      7) return ;;
     choice=$(whiptail --title "TwinSync setup / utilities" --menu "Choose an action:" 20 80 8 \
       1 "Init / configure local Twin repo (create local Git)" \
       2 "GitHub setup (remember username/token + device repo)" \
@@ -1000,6 +1062,10 @@ snapshot_sync_menu() {
   load_config
   while true; do
     local choice
+    choice=$(whiptail --title "TwinSync snapshot & sync" --menu "Keep the twin repo up to date or pull from the remote copy:" 18 90 6 \
+      1 "Take snapshot (update twin + commit + try push)" \
+      2 "Pull from remote (refresh twin repo)" \
+      3 "Back" 3>&1 1>&2 2>&3) || return
     choice=$(whiptail --title "TwinSync snapshot / sync" --menu "Choose an action:" 18 90 6 \
       1 "Take snapshot (update twin + commit + optional push)" \
       2 "Pull from remote (update twin repo)" \
@@ -1007,6 +1073,87 @@ snapshot_sync_menu() {
     case "$choice" in
       1) snapshot ;;
       2) pull_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+plan_apply_menu() {
+files_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "Plan & apply changes" --menu "Pick what to reconcile from the twin onto this system:" 20 90 8 \
+      1 "Files (plan/apply)" \
+      2 "Packages (plan/apply)" \
+      3 "Services (plan/apply)" \
+      4 "Startup (plan/apply)" \
+      5 "Back" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) files_menu ;;
+      2) packages_menu ;;
+      3) services_menu ;;
+      4) startup_menu ;;
+      5) return ;;
+    choice=$(whiptail --title "TwinSync files" --menu "Choose an action:" 18 90 6 \
+      1 "Plan file changes (twin -> system)" \
+      2 "Apply file changes (twin -> system)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_file_changes ;;
+      2) apply_file_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+packages_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync packages" --menu "Choose an action:" 18 90 6 \
+      1 "Plan package changes (apt, twin -> system)" \
+      2 "Apply package changes (apt, twin -> system)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_package_changes ;;
+      2) apply_package_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+services_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync services" --menu "Choose an action:" 18 90 6 \
+      1 "Plan service changes (systemd, twin -> system)" \
+      2 "Apply service changes (systemd, twin -> system)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_service_changes ;;
+      2) apply_service_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+startup_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync startup" --menu "Choose an action:" 18 90 6 \
+      1 "Plan startup changes (user crontab)" \
+      2 "Apply startup changes (user crontab)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_startup_changes ;;
+      2) apply_startup_changes ;;
       3) return ;;
     esac
   done
@@ -1085,6 +1232,12 @@ main_menu() {
   load_config
   while true; do
     local choice
+    choice=$(whiptail --title "TwinSync" --menu "Start with setup, keep the twin in sync, then plan/apply changes:" 20 90 9 \
+      1 "Setup (repo, roots, GitHub, deps, config)" \
+      2 "Snapshot & sync" \
+      3 "Plan & apply changes" \
+      4 "Time Machine / history" \
+      5 "Exit" 3>&1 1>&2 2>&3) || exit 0
     choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 20 84 10 \
       1 "Setup / utilities" \
       2 "Snapshot / sync" \
@@ -1098,6 +1251,9 @@ main_menu() {
     case "$choice" in
       1) setup_menu ;;
       2) snapshot_sync_menu ;;
+      3) plan_apply_menu ;;
+      4) time_machine_menu ;;
+      5) exit 0 ;;
       3) files_menu ;;
       4) packages_menu ;;
       5) services_menu ;;
