@@ -1,0 +1,7 @@
+name: "logs.home_assistant"
+kind: "logs"
+provides:
+  logs_fragments:
+    - "home_assistant"
+dependencies: []
+entrypoint: "twin_core.plugins_runtime.logs_home_assistant:HomeAssistantLogsPlugin"

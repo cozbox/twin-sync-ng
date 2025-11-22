@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TwinSync++ plan",
+  "type": "object",
+  "additionalProperties": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "op": {"type": "string"},
+        "name": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

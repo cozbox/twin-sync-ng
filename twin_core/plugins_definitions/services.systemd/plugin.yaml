@@ -1,0 +1,7 @@
+name: "services.systemd"
+kind: "config"
+provides:
+  state_fragments:
+    - "services"
+dependencies: []
+entrypoint: "twin_core.plugins_runtime.services_systemd:SystemdServicesPlugin"

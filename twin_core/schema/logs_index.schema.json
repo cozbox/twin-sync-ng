@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TwinSync++ logs index",
+  "type": "object",
+  "properties": {
+    "systemd_journal": {"type": "object"},
+    "files": {"type": "object"},
+    "home_assistant": {"type": "object"},
+    "plan_execution": {"type": "array"}
+  },
+  "additionalProperties": true
+}
