@@ -85,6 +85,9 @@ All appliers count successes/failures and display the summary.
 ## 7. User interface
 - **Whiptail main menu** – setup, snapshot/sync, a dedicated Plan & Apply hub (routes to files/packages/services/startup), and Time Machine.
 - **Setup submenu** – init local twin repo, choose filesystem roots, link/create GitHub device repo, install dependencies, update the TwinSync program from GitHub (uses the tracked remote/branch when available, falls back to a detected remote branch, and logs fetch/pull output to `/tmp/twinsync-update.log`), view config.
+- **Setup submenu** – init local twin repo, choose filesystem roots, link/create GitHub device repo, install dependencies, update the TwinSync program from GitHub (respects the tracked remote/branch and logs output), view config.
+- **Whiptail main menu** – entry points for setup, snapshot, pull, plan/apply per domain, and Time Machine.
+- **Setup submenu** – init local twin repo, configure GitHub device repo, install dependencies, pick filesystem roots, view config.
 - **CLI shortcuts** – `./twinsync plan-files`, `./twinsync snapshot`, etc. for advanced use or scripting.
 
 ## 8. GitHub integration
@@ -97,3 +100,9 @@ All appliers count successes/failures and display the summary.
 - After confirmation, runs `git reset --hard <hash>` to roll the twin back.
 - User must manually push/force-push if they mirror to GitHub.
 
+## 10. Future directions
+- Smarter include/exclude lists for filesystem snapshots.
+- Richer plan formats (JSON/YAML) stored under `plans/`.
+- Additional startup sources (systemd timers, desktop autostart files, etc.).
+- Better logging/rollback when appliers touch the live system.
+- Packaging/installer for easier distribution.

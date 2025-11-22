@@ -67,6 +67,61 @@ You can exit from any submenu back up to the main screen. The CLI also has subco
 
 On a Debian/Ubuntu-ish system:
 
+
+- **Setup**
+  - Init / configure local Twin repo
+  - Configure filesystem roots to mirror
+  - Link or create GitHub device repo
+  - Install / check dependencies (Debian/Ubuntu)
+  - Update TwinSync program (git pull with remote/branch detection + log)
+  - Show current TwinSync config
+- **Snapshot & sync**
+  - Take snapshot (update twin + commit + try push)
+  - Pull from remote (refresh twin repo)
+- **Plan & apply changes**
+  - Files (plan/apply)
+  - Packages (plan/apply)
+  - Services (plan/apply)
+  - Startup (plan/apply)
+- **Time Machine / history**
+
+You can exit from any submenu back up to the main screen. The CLI also has subcommands (see `./twinsync --help`).
+
+## Quick start
+
+On a Debian/Ubuntu-ish system:
+
+Running `./twinsync` launches a whiptail menu that keeps the top level tidy and then fans out:
+
+- Setup / utilities
+  - Init / configure local Twin repo (create local Git)
+  - GitHub setup (remember username/token + per-device repo)
+  - Install/check dependencies (Debian/Ubuntu)
+  - Configure filesystem roots (directories to mirror)
+  - Show current TwinSync config
+- Snapshot / sync
+  - Take snapshot (update twin + commit + optional push)
+  - Pull from remote (update twin repo)
+- Files (plan/apply)
+  - Plan file changes (twin -> system)
+  - Apply file changes (twin -> system)
+- Packages (plan/apply)
+  - Plan package changes (apt, twin -> system)
+  - Apply package changes (apt, twin -> system)
+- Services (plan/apply)
+  - Plan service changes (systemd, twin -> system)
+  - Apply service changes (systemd, twin -> system)
+- Startup (plan/apply)
+  - Plan startup changes (user crontab)
+  - Apply startup changes (user crontab)
+- Time Machine / history
+
+You can exit from any submenu back up to the main screen. The CLI also has subcommands (see `./twinsync --help`).
+
+## Quick start
+
+On a Debian/Ubuntu-ish system:
+
 ```bash
 sudo apt update
 sudo apt install -y git whiptail curl
