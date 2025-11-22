@@ -261,14 +261,7 @@ update_twinsync_program() {
     return
   fi
 
-  local dirty
   if (cd "$SCRIPT_DIR" && ! git diff --quiet --ignore-submodules HEAD); then
-    dirty=1
-  else
-    dirty=0
-  fi
-
-  if [[ "$dirty" -eq 1 ]]; then
     if ! whiptail --yesno "Local changes detected in the TwinSync directory.\n\nA git pull could overwrite them.\n\nProceed anyway?" 14 80; then
       return
     fi
@@ -294,7 +287,6 @@ update_twinsync_program() {
   if [[ -z "$branch" ]]; then
     whiptail --msgbox "No remote branch detected for updates.\n\nEnsure the TwinSync checkout tracks a remote (e.g. origin/main)." 14 85
     return
-    branch=$(cd "$SCRIPT_DIR" && git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
   fi
 
   if ! (cd "$SCRIPT_DIR" && git remote get-url "$remote" >/dev/null 2>&1); then
@@ -304,6 +296,7 @@ update_twinsync_program() {
 
   local log_file
   log_file="/tmp/twinsync-update.log"
+
   {
     echo "TwinSync updater run: $(date)"
     echo "Using remote: $remote"
@@ -316,14 +309,10 @@ update_twinsync_program() {
     git -C "$SCRIPT_DIR" pull --ff-only "$remote" "$branch"
   } >"$log_file" 2>&1
 
-  if grep -q "Fast-forward" "$log_file" || grep -q "Already up to date." "$log_file"; then
+  if grep -Eq "Fast-forward|Already up to date." "$log_file"; then
     whiptail --msgbox "TwinSync program checked $remote/$branch for updates.\n\nSee $log_file for details." 14 85
   else
     whiptail --msgbox "TwinSync update may not have completed.\n\nReview $log_file for git output, resolve issues, and try again." 14 85
-  if (cd "$SCRIPT_DIR" && git fetch "$remote" >/dev/null 2>&1 && git pull --ff-only "$remote" "$branch" >/dev/null 2>"$log_file"); then
-    whiptail --msgbox "TwinSync program updated from $remote/$branch.\n\nRestart TwinSync to run the newest version." 14 85
-  else
-    whiptail --msgbox "TwinSync update failed.\n\nCheck $log_file for git output, resolve any conflicts, and try again." 14 85
   fi
 }
 
@@ -1053,7 +1042,7 @@ setup_menu() {
   load_config
   while true; do
     local choice
-    choice=$(whiptail --title "TwinSync setup" --menu "Prepare the twin and choose what gets mirrored:" 20 90 8 \
+    choice=$(whiptail --title "TwinSync setup / utilities" --menu "Prepare the twin and choose what gets mirrored:" 20 90 8 \
       1 "Init / configure local twin repo" \
       2 "Configure filesystem roots to mirror" \
       3 "Link or create GitHub device repo" \
@@ -1061,6 +1050,7 @@ setup_menu() {
       5 "Update TwinSync program (git pull)" \
       6 "Show current TwinSync config" \
       7 "Back to main menu" 3>&1 1>&2 2>&3) || return
+
     case "$choice" in
       1) init_repo ;;
       2) configure_filesystem_roots ;;
@@ -1069,28 +1059,6 @@ setup_menu() {
       5) update_twinsync_program ;;
       6) show_config ;;
       7) return ;;
-    case "$choice" in
-      1) init_repo ;;
-      2) configure_filesystem_roots ;;
-      3) setup_github_device_remote ;;
-      4) install_dependencies ;;
-      5) update_twinsync_program ;;
-      6) show_config ;;
-      7) return ;;
-    choice=$(whiptail --title "TwinSync setup / utilities" --menu "Choose an action:" 20 80 8 \
-      1 "Init / configure local Twin repo (create local Git)" \
-      2 "GitHub setup (remember username/token + device repo)" \
-      3 "Install/check dependencies (Debian/Ubuntu)" \
-      4 "Configure filesystem roots (directories to mirror)" \
-      5 "Show current TwinSync config" \
-      6 "Back to main menu" 3>&1 1>&2 2>&3) || return
-    case "$choice" in
-      1) init_repo ;;
-      2) setup_github_device_remote ;;
-      3) install_dependencies ;;
-      4) configure_filesystem_roots ;;
-      5) show_config ;;
-      6) return ;;
     esac
   done
 }
@@ -1100,14 +1068,11 @@ snapshot_sync_menu() {
   load_config
   while true; do
     local choice
-    choice=$(whiptail --title "TwinSync snapshot & sync" --menu "Keep the twin repo up to date or pull from the remote copy:" 18 90 6 \
-      1 "Take snapshot (update twin + commit + try push)" \
-      2 "Pull from remote (refresh twin repo)" \
-      3 "Back" 3>&1 1>&2 2>&3) || return
-    choice=$(whiptail --title "TwinSync snapshot / sync" --menu "Choose an action:" 18 90 6 \
+    choice=$(whiptail --title "TwinSync snapshot / sync" --menu "Keep the twin repo up to date or pull from the remote copy:" 18 90 6 \
       1 "Take snapshot (update twin + commit + optional push)" \
       2 "Pull from remote (update twin repo)" \
       3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+
     case "$choice" in
       1) snapshot ;;
       2) pull_changes ;;
@@ -1117,7 +1082,6 @@ snapshot_sync_menu() {
 }
 
 plan_apply_menu() {
-files_menu() {
   ensure_whiptail
   load_config
   while true; do
@@ -1127,72 +1091,14 @@ files_menu() {
       2 "Packages (plan/apply)" \
       3 "Services (plan/apply)" \
       4 "Startup (plan/apply)" \
-      5 "Back" 3>&1 1>&2 2>&3) || return
+      5 "Back to main menu" 3>&1 1>&2 2>&3) || return
+
     case "$choice" in
       1) files_menu ;;
       2) packages_menu ;;
       3) services_menu ;;
       4) startup_menu ;;
       5) return ;;
-    choice=$(whiptail --title "TwinSync files" --menu "Choose an action:" 18 90 6 \
-      1 "Plan file changes (twin -> system)" \
-      2 "Apply file changes (twin -> system)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
-    case "$choice" in
-      1) plan_file_changes ;;
-      2) apply_file_changes ;;
-      3) return ;;
-    esac
-  done
-}
-
-packages_menu() {
-  ensure_whiptail
-  load_config
-  while true; do
-    local choice
-    choice=$(whiptail --title "TwinSync packages" --menu "Choose an action:" 18 90 6 \
-      1 "Plan package changes (apt, twin -> system)" \
-      2 "Apply package changes (apt, twin -> system)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
-    case "$choice" in
-      1) plan_package_changes ;;
-      2) apply_package_changes ;;
-      3) return ;;
-    esac
-  done
-}
-
-services_menu() {
-  ensure_whiptail
-  load_config
-  while true; do
-    local choice
-    choice=$(whiptail --title "TwinSync services" --menu "Choose an action:" 18 90 6 \
-      1 "Plan service changes (systemd, twin -> system)" \
-      2 "Apply service changes (systemd, twin -> system)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
-    case "$choice" in
-      1) plan_service_changes ;;
-      2) apply_service_changes ;;
-      3) return ;;
-    esac
-  done
-}
-
-startup_menu() {
-  ensure_whiptail
-  load_config
-  while true; do
-    local choice
-    choice=$(whiptail --title "TwinSync startup" --menu "Choose an action:" 18 90 6 \
-      1 "Plan startup changes (user crontab)" \
-      2 "Apply startup changes (user crontab)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
-    case "$choice" in
-      1) plan_startup_changes ;;
-      2) apply_startup_changes ;;
-      3) return ;;
     esac
   done
 }
@@ -1205,7 +1111,7 @@ files_menu() {
     choice=$(whiptail --title "TwinSync files" --menu "Choose an action:" 18 90 6 \
       1 "Plan file changes (twin -> system)" \
       2 "Apply file changes (twin -> system)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+      3 "Back to previous menu" 3>&1 1>&2 2>&3) || return
     case "$choice" in
       1) plan_file_changes ;;
       2) apply_file_changes ;;
@@ -1222,7 +1128,7 @@ packages_menu() {
     choice=$(whiptail --title "TwinSync packages" --menu "Choose an action:" 18 90 6 \
       1 "Plan package changes (apt, twin -> system)" \
       2 "Apply package changes (apt, twin -> system)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+      3 "Back to previous menu" 3>&1 1>&2 2>&3) || return
     case "$choice" in
       1) plan_package_changes ;;
       2) apply_package_changes ;;
@@ -1239,7 +1145,7 @@ services_menu() {
     choice=$(whiptail --title "TwinSync services" --menu "Choose an action:" 18 90 6 \
       1 "Plan service changes (systemd, twin -> system)" \
       2 "Apply service changes (systemd, twin -> system)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+      3 "Back to previous menu" 3>&1 1>&2 2>&3) || return
     case "$choice" in
       1) plan_service_changes ;;
       2) apply_service_changes ;;
@@ -1256,75 +1162,7 @@ startup_menu() {
     choice=$(whiptail --title "TwinSync startup" --menu "Choose an action:" 18 90 6 \
       1 "Plan startup changes (user crontab)" \
       2 "Apply startup changes (user crontab)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
-    case "$choice" in
-      1) plan_startup_changes ;;
-      2) apply_startup_changes ;;
-      3) return ;;
-    esac
-  done
-}
-
-files_menu() {
-  ensure_whiptail
-  load_config
-  while true; do
-    local choice
-    choice=$(whiptail --title "TwinSync files" --menu "Choose an action:" 18 90 6 \
-      1 "Plan file changes (twin -> system)" \
-      2 "Apply file changes (twin -> system)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
-    case "$choice" in
-      1) plan_file_changes ;;
-      2) apply_file_changes ;;
-      3) return ;;
-    esac
-  done
-}
-
-packages_menu() {
-  ensure_whiptail
-  load_config
-  while true; do
-    local choice
-    choice=$(whiptail --title "TwinSync packages" --menu "Choose an action:" 18 90 6 \
-      1 "Plan package changes (apt, twin -> system)" \
-      2 "Apply package changes (apt, twin -> system)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
-    case "$choice" in
-      1) plan_package_changes ;;
-      2) apply_package_changes ;;
-      3) return ;;
-    esac
-  done
-}
-
-services_menu() {
-  ensure_whiptail
-  load_config
-  while true; do
-    local choice
-    choice=$(whiptail --title "TwinSync services" --menu "Choose an action:" 18 90 6 \
-      1 "Plan service changes (systemd, twin -> system)" \
-      2 "Apply service changes (systemd, twin -> system)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
-    case "$choice" in
-      1) plan_service_changes ;;
-      2) apply_service_changes ;;
-      3) return ;;
-    esac
-  done
-}
-
-startup_menu() {
-  ensure_whiptail
-  load_config
-  while true; do
-    local choice
-    choice=$(whiptail --title "TwinSync startup" --menu "Choose an action:" 18 90 6 \
-      1 "Plan startup changes (user crontab)" \
-      2 "Apply startup changes (user crontab)" \
-      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+      3 "Back to previous menu" 3>&1 1>&2 2>&3) || return
     case "$choice" in
       1) plan_startup_changes ;;
       2) apply_startup_changes ;;
@@ -1344,15 +1182,6 @@ main_menu() {
       3 "Plan & apply changes" \
       4 "Time Machine / history" \
       5 "Exit" 3>&1 1>&2 2>&3) || exit 0
-    choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 20 84 10 \
-      1 "Setup / utilities" \
-      2 "Snapshot / sync" \
-      3 "Files (plan/apply)" \
-      4 "Packages (plan/apply)" \
-      5 "Services (plan/apply)" \
-      6 "Startup (plan/apply)" \
-      7 "Time Machine / history" \
-      8 "Exit" 3>&1 1>&2 2>&3) || exit 0
 
     case "$choice" in
       1) setup_menu ;;
@@ -1360,16 +1189,9 @@ main_menu() {
       3) plan_apply_menu ;;
       4) time_machine_menu ;;
       5) exit 0 ;;
-      3) files_menu ;;
-      4) packages_menu ;;
-      5) services_menu ;;
-      6) startup_menu ;;
-      7) time_machine_menu ;;
-      8) exit 0 ;;
     esac
   done
 }
-
 # CLI shortcuts for advanced use
 if [[ $# -gt 0 ]]; then
   case "$1" in
