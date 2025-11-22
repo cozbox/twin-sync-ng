@@ -1,5 +1,34 @@
 """Setup file for TwinSync++ Python package."""
+import sys
 from setuptools import setup, find_packages
+from setuptools.command.install import install
+
+
+class VerboseInstall(install):
+    """Custom install command with verbose logging."""
+    
+    def run(self):
+        """Run installation with verbose output."""
+        print("=" * 60)
+        print("Installing TwinSync++ - Device Configuration Manager")
+        print("=" * 60)
+        print("Finding packages...")
+        
+        # Run the actual installation
+        install.run(self)
+        
+        print("\n" + "=" * 60)
+        print("Installation Complete!")
+        print("=" * 60)
+        print("\nTwinSync++ has been installed successfully.")
+        print("\nTo get started:")
+        print("  1. Run 'twin' to launch the GUI")
+        print("  2. Or use 'twin --help' for command-line options")
+        print("  3. Run 'twin init' to initialize your first repository")
+        print("\nFor more information, visit:")
+        print("  https://github.com/cozbox/twin-sync-ng")
+        print()
+
 
 setup(
     name="twin-sync",
@@ -16,6 +45,9 @@ setup(
         "console_scripts": [
             "twin=twin_core.cli:main",
         ],
+    },
+    cmdclass={
+        'install': VerboseInstall,
     },
     classifiers=[
         "Development Status :: 3 - Alpha",
