@@ -1,0 +1,64 @@
+# Plugin Metadata Schema
+# Defines the structure for plugin.yaml files
+
+type: object
+required:
+  - name
+  - kind
+  - provides
+  - entrypoint
+properties:
+  name:
+    type: string
+    description: "Unique plugin identifier (e.g., 'packages.debian')"
+    pattern: "^[a-z0-9]+\\.[a-z0-9_]+$"
+  
+  kind:
+    type: string
+    enum: ["config", "logs"]
+    description: "Plugin type: 'config' for state/plan/apply, 'logs' for log collection"
+  
+  provides:
+    type: object
+    description: "What the plugin provides"
+    properties:
+      state_fragments:
+        type: array
+        items:
+          type: string
+        description: "List of state fragment names this plugin manages"
+      log_fragments:
+        type: array
+        items:
+          type: string
+        description: "List of log fragment names this plugin collects"
+  
+  dependencies:
+    type: array
+    items:
+      type: string
+    description: "List of plugin names this plugin depends on"
+    default: []
+  
+  entrypoint:
+    type: string
+    description: "Python module path and class name (e.g., 'twin_core.plugins_runtime.packages_debian:DebianPackagesPlugin')"
+    pattern: "^[a-zA-Z0-9_\\.]+:[A-Z][a-zA-Z0-9_]+$"
+  
+  schema_version:
+    type: string
+    description: "Version of the plugin metadata schema"
+    default: "1.0"
+  
+  description:
+    type: string
+    description: "Human-readable description of what the plugin does"
+  
+  requires_sudo:
+    type: boolean
+    description: "Whether the plugin requires sudo/root privileges to apply changes"
+    default: false
+  
+  detect_command:
+    type: string
+    description: "Optional command to check if plugin should be enabled (e.g., 'which dpkg')"

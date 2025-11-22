@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# TwinSync v0.3
+# TwinSync v0.3+ with Python implementation support
 # - Linux only
 # - whiptail menu UI
 # - Local Git "twin repo" per device
@@ -11,6 +11,19 @@ set -euo pipefail
 # - Time Machine: choose git snapshot and reset twin repo to it
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Check for Python implementation
+if command -v python3 >/dev/null 2>&1; then
+    # Check if twin_core module is available
+    if python3 -c "import sys; sys.path.insert(0, '$SCRIPT_DIR'); import twin_core" 2>/dev/null; then
+        echo "[TwinSync++] Using Python implementation"
+        exec python3 -m twin_core.cli "$@"
+    fi
+fi
+
+# Fall back to bash implementation
+echo "[TwinSync] Using bash implementation"
+
 TWIN_CONFIG_DIR="${HOME}/.config/twinsync"
 TWIN_CONFIG_FILE="${TWIN_CONFIG_DIR}/config"
 
@@ -18,19 +31,6 @@ DEFAULT_TWIN_REPO="${HOME}/twinsync-device"
 DEFAULT_FS_ROOTS="/etc ${HOME}/.config"
 
 TWIN_REPO=""
-
-if command -v python3 >/dev/null 2>&1; then
-    if python3 - <<'PY' >/dev/null 2>&1
-import importlib.util
-import sys
-
-spec = importlib.util.find_spec("twin_core")
-sys.exit(0 if spec else 1)
-PY
-    then
-        echo "[TwinSync++] Python twin engine detected. New 'twin' CLI is under development."
-    fi
-fi
 GITHUB_USER=""
 GITHUB_TOKEN=""
 GITHUB_DEVICE_REPO=""

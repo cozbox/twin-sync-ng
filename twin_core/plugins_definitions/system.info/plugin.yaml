@@ -1,0 +1,7 @@
+name: "system.info"
+kind: "config"
+provides:
+  state_fragments:
+    - "system"
+dependencies: []
+entrypoint: "twin_core.plugins_runtime.system_info:SystemInfoPlugin"
