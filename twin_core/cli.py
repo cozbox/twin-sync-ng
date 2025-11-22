@@ -16,15 +16,24 @@ from . import utils
 def run_whiptail(args: List[str]) -> Tuple[int, str]:
     """Run whiptail and return exit code and output."""
     try:
-        result = subprocess.run(
-            ["whiptail"] + args,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        # Whiptail outputs to stderr by design
+        # Whiptail needs direct terminal access - use /dev/tty for stdin
+        # and capture stderr for the actual output (whiptail writes to stderr by design)
+        with open('/dev/tty', 'r') as tty_in:
+            result = subprocess.run(
+                ["whiptail"] + args,
+                stdin=tty_in,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+        # Whiptail outputs selection to stderr by design
         return result.returncode, result.stderr.strip()
+    except FileNotFoundError:
+        print("ERROR: whiptail not found. Install it with: sudo apt-get install whiptail", file=sys.stderr)
+        return 1, "whiptail not found"
     except Exception as e:
+        print(f"ERROR running whiptail: {e}", file=sys.stderr)
         return 1, str(e)
 
 
@@ -403,31 +412,39 @@ def plan_apply_menu() -> None:
 
 def main_menu() -> None:
     """Main TwinSync++ menu."""
-    while True:
-        choice = menu(
-            "TwinSync++",
-            "Linux device twin with Git-backed configuration management.\n\nChoose an option:",
-            [
-                ("1", "Setup (init, config, GitHub, dependencies)"),
-                ("2", "Snapshot & Sync (collect and push/pull)"),
-                ("3", "Plan & Apply (diff and execute changes)"),
-                ("4", "Time Machine (git history navigation)"),
-                ("5", "Exit"),
-            ],
-            height=18,
-            width=75
-        )
-        
-        if choice == "1":
-            setup_menu()
-        elif choice == "2":
-            snapshot_sync_menu()
-        elif choice == "3":
-            plan_apply_menu()
-        elif choice == "4":
-            time_machine_menu()
-        elif choice == "5" or choice is None:
-            break
+    try:
+        while True:
+            choice = menu(
+                "TwinSync++",
+                "Linux device twin with Git-backed configuration management.\n\nChoose an option:",
+                [
+                    ("1", "Setup (init, config, GitHub, dependencies)"),
+                    ("2", "Snapshot & Sync (collect and push/pull)"),
+                    ("3", "Plan & Apply (diff and execute changes)"),
+                    ("4", "Time Machine (git history navigation)"),
+                    ("5", "Exit"),
+                ],
+                height=18,
+                width=75
+            )
+            
+            if choice == "1":
+                setup_menu()
+            elif choice == "2":
+                snapshot_sync_menu()
+            elif choice == "3":
+                plan_apply_menu()
+            elif choice == "4":
+                time_machine_menu()
+            elif choice == "5" or choice is None:
+                break
+    except KeyboardInterrupt:
+        print("\nExiting TwinSync++", file=sys.stderr)
+        sys.exit(0)
+    except Exception as e:
+        print(f"\nERROR: Menu failed: {e}", file=sys.stderr)
+        print("Try running with a specific command instead: twin --help", file=sys.stderr)
+        sys.exit(1)
 
 
 def _build_parser() -> argparse.ArgumentParser:
