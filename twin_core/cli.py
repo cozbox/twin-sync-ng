@@ -463,6 +463,9 @@ def _build_parser() -> argparse.ArgumentParser:
         description="TwinSync++ - Git-backed device configuration management"
     )
     
+    # Add global verbose flag
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose output")
+    
     subparsers = parser.add_subparsers(dest="command")
 
     # Core commands
@@ -493,7 +496,8 @@ def _build_parser() -> argparse.ArgumentParser:
     tm_parser = subparsers.add_parser("time-machine", help="Navigate git history")
     tm_parser.add_argument("--commit", help="Commit hash to reset to")
     
-    # Interactive menu
+    # Interactive menus
+    subparsers.add_parser("gui", help="Launch graphical user interface (default)")
     subparsers.add_parser("menu", help="Launch interactive whiptail menu")
     
     # Dependencies
@@ -504,24 +508,44 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     """Main CLI entry point."""
+    # Check if tkinter is available for GUI
+    has_tkinter = False
+    try:
+        import tkinter as tk
+        has_tkinter = True
+    except ImportError:
+        pass
+    
     # Check if whiptail is available
     has_whiptail = utils.check_command_exists("whiptail")
     
-    # If no arguments and whiptail available, launch menu
+    # If no arguments, launch GUI if available, otherwise whiptail menu, otherwise help
     if (argv is None and len(sys.argv) == 1) or (argv is not None and len(argv) == 0):
-        if has_whiptail:
+        if has_tkinter:
+            # Launch GUI
+            from . import gui
+            gui.launch_gui()
+            return
+        elif has_whiptail:
+            # Fall back to whiptail menu
             main_menu()
             return
         else:
-            print("Whiptail not found. Use command-line interface:")
+            print("GUI (tkinter) and whiptail not available. Use command-line interface:")
             print("  twin --help")
             return
     
     parser = _build_parser()
     args = parser.parse_args(argv)
+    
+    # Set verbose mode based on flag
+    verbose = getattr(args, "verbose", False)
 
     if not args.command:
-        if has_whiptail:
+        if has_tkinter:
+            from . import gui
+            gui.launch_gui()
+        elif has_whiptail:
             main_menu()
         else:
             parser.print_help()
@@ -529,38 +553,80 @@ def main(argv: list[str] | None = None) -> None:
 
     # Execute commands
     try:
-        if args.command == "init":
+        if args.command == "gui":
+            # Launch GUI explicitly
+            if has_tkinter:
+                from . import gui
+                gui.launch_gui()
+            else:
+                print("GUI (tkinter) is not available. Install tkinter:", file=sys.stderr)
+                print("  sudo apt-get install python3-tk", file=sys.stderr)
+                sys.exit(1)
+                
+        elif args.command == "init":
+            if verbose:
+                print("Initializing twin repository...")
             core.init_twin_repo()
+            if verbose:
+                print("Repository initialization complete")
             
         elif args.command in ("snapshot", "snap"):
+            if verbose:
+                print("Starting snapshot capture...")
             push = getattr(args, "push", False)
             core.run_snapshot(commit=True, push=push)
+            if verbose:
+                print("Snapshot complete")
             
         elif args.command == "pull":
+            if verbose:
+                print("Pulling from remote repository...")
             success, msg = core.run_pull()
             if not success:
                 print(f"Pull failed: {msg}", file=sys.stderr)
                 sys.exit(1)
+            if verbose:
+                print("Pull successful")
                 
         elif args.command == "push":
+            if verbose:
+                print("Pushing to remote repository...")
             success, msg = core.run_push()
             if not success:
                 print(f"Push failed: {msg}", file=sys.stderr)
                 sys.exit(1)
+            if verbose:
+                print("Push successful")
                 
         elif args.command == "plan":
+            if verbose:
+                print("Generating plan...")
             core.run_plan()
+            if verbose:
+                print("Plan generation complete")
             
         elif args.command == "apply":
+            if verbose:
+                print("Applying plan...")
             core.run_apply()
+            if verbose:
+                print("Plan application complete")
             
         elif args.command == "status":
+            if verbose:
+                print("Checking drift status...")
             core.run_status()
+            if verbose:
+                print("Status check complete")
             
         elif args.command == "logs":
+            if verbose:
+                print("Loading logs...")
             core.run_logs()
             
         elif args.command == "config":
+            if verbose:
+                print("Loading configuration...")
             print(core.get_config_display())
             
         elif args.command == "config-fs":
@@ -574,10 +640,14 @@ def main(argv: list[str] | None = None) -> None:
             if has_whiptail and not (args.user and args.token and args.repo):
                 setup_github_menu()
             elif args.user and args.token and args.repo:
+                if verbose:
+                    print(f"Setting up GitHub integration for user '{args.user}'...")
                 success, msg = core.setup_github_remote(args.user, args.token, args.repo)
                 print(msg)
                 if not success:
                     sys.exit(1)
+                if verbose:
+                    print("GitHub setup complete")
             else:
                 print("Provide --user, --token, and --repo, or use whiptail menu")
                 sys.exit(1)
@@ -586,8 +656,12 @@ def main(argv: list[str] | None = None) -> None:
             if has_whiptail and not args.commit:
                 time_machine_menu()
             elif args.commit:
+                if verbose:
+                    print(f"Resetting to commit {args.commit}...")
                 if not core.reset_to_commit(args.commit):
                     sys.exit(1)
+                if verbose:
+                    print("Reset complete")
             else:
                 print("Provide --commit hash, or use whiptail menu")
                 sys.exit(1)
