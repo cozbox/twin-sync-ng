@@ -1,0 +1,132 @@
+# Configuration Schema
+# Defines the structure for config.yaml
+
+type: object
+required:
+  - twin_repo
+  - filesystem_roots
+  - plugins
+properties:
+  twin_repo:
+    type: string
+    description: "Path to the twin repository directory"
+    default: "~/twinsync-device"
+  
+  filesystem_roots:
+    type: array
+    items:
+      type: string
+    description: "List of filesystem paths to mirror into the twin"
+    default:
+      - "/etc"
+      - "~/.config"
+    minItems: 1
+  
+  github:
+    type: object
+    description: "GitHub integration configuration"
+    properties:
+      user:
+        type: string
+        description: "GitHub username"
+      
+      token:
+        type: string
+        description: "GitHub personal access token (with 'repo' scope)"
+      
+      device_repo:
+        type: string
+        description: "Name of the device-specific GitHub repository"
+        pattern: "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+      
+      auto_push:
+        type: boolean
+        description: "Automatically push snapshots to GitHub"
+        default: false
+      
+      auto_pull:
+        type: boolean
+        description: "Automatically pull before planning"
+        default: false
+  
+  plugins:
+    type: object
+    required:
+      - enable
+    properties:
+      enable:
+        type: array
+        items:
+          type: string
+          pattern: "^[a-z0-9]+\\.[a-z0-9_]+$"
+        description: "List of enabled plugin names"
+        uniqueItems: true
+      
+      config:
+        type: object
+        description: "Plugin-specific configuration"
+        patternProperties:
+          "^[a-z0-9]+\\.[a-z0-9_]+$":
+            type: object
+            description: "Configuration for a specific plugin"
+  
+  snapshot:
+    type: object
+    description: "Snapshot behavior configuration"
+    properties:
+      auto_commit:
+        type: boolean
+        description: "Automatically commit snapshots"
+        default: true
+      
+      commit_message_template:
+        type: string
+        description: "Template for snapshot commit messages"
+        default: "TwinSync snapshot {timestamp}"
+      
+      max_file_size_mb:
+        type: integer
+        description: "Maximum file size to include in snapshots (MB)"
+        default: 1
+        minimum: 1
+        maximum: 100
+  
+  apply:
+    type: object
+    description: "Apply behavior configuration"
+    properties:
+      require_confirmation:
+        type: boolean
+        description: "Require user confirmation before applying changes"
+        default: true
+      
+      backup_replaced_files:
+        type: boolean
+        description: "Create backups of replaced files"
+        default: true
+      
+      backup_suffix:
+        type: string
+        description: "Suffix for backup files"
+        default: ".twinbak-{timestamp}"
+      
+      dry_run:
+        type: boolean
+        description: "Simulate apply without making changes"
+        default: false
+  
+  logging:
+    type: object
+    description: "Logging configuration"
+    properties:
+      level:
+        type: string
+        enum: ["DEBUG", "INFO", "WARNING", "ERROR"]
+        description: "Log level"
+        default: "INFO"
+      
+      max_log_history:
+        type: integer
+        description: "Maximum number of timestamped log directories to keep"
+        default: 30
+        minimum: 1

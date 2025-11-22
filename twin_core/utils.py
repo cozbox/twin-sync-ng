@@ -139,6 +139,31 @@ def git_commit(repo_path: Path, message: str) -> bool:
             # No changes to commit
             return True
         
+        # Ensure git user is configured (use generic if not set)
+        subprocess.run(
+            ["git", "config", "user.email"],
+            cwd=repo_path,
+            capture_output=True,
+            check=False,
+        )
+        result = subprocess.run(
+            ["git", "config", "user.email"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if not result.stdout.strip():
+            subprocess.run(
+                ["git", "config", "user.email", "twinsync@localhost"],
+                cwd=repo_path,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "TwinSync"],
+                cwd=repo_path,
+                capture_output=True,
+            )
+        
         subprocess.run(
             ["git", "commit", "-m", message],
             cwd=repo_path,
