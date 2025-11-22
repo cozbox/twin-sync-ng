@@ -1,0 +1,17 @@
+type: object
+properties:
+  system:
+    type: object
+    properties:
+      uname:
+        type: string
+        description: "Output of uname -a"
+      hostname:
+        type: string
+        description: "System hostname"
+      os_release:
+        type: object
+        description: "Contents of /etc/os-release parsed"
+      kernel:
+        type: string
+        description: "Kernel version"

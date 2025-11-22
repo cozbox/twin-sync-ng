@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
     },
     "plugins": {
         "enable": [
+            "system.info",
             "packages.debian",
             "services.systemd",
             "files.mirror",
