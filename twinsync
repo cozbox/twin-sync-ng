@@ -1039,6 +1039,20 @@ setup_menu() {
       5) update_twinsync_program ;;
       6) show_config ;;
       7) return ;;
+    choice=$(whiptail --title "TwinSync setup / utilities" --menu "Choose an action:" 20 80 8 \
+      1 "Init / configure local Twin repo (create local Git)" \
+      2 "GitHub setup (remember username/token + device repo)" \
+      3 "Install/check dependencies (Debian/Ubuntu)" \
+      4 "Configure filesystem roots (directories to mirror)" \
+      5 "Show current TwinSync config" \
+      6 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) init_repo ;;
+      2) setup_github_device_remote ;;
+      3) install_dependencies ;;
+      4) configure_filesystem_roots ;;
+      5) show_config ;;
+      6) return ;;
     esac
   done
 }
@@ -1052,6 +1066,10 @@ snapshot_sync_menu() {
       1 "Take snapshot (update twin + commit + try push)" \
       2 "Pull from remote (refresh twin repo)" \
       3 "Back" 3>&1 1>&2 2>&3) || return
+    choice=$(whiptail --title "TwinSync snapshot / sync" --menu "Choose an action:" 18 90 6 \
+      1 "Take snapshot (update twin + commit + optional push)" \
+      2 "Pull from remote (update twin repo)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
     case "$choice" in
       1) snapshot ;;
       2) pull_changes ;;
@@ -1061,6 +1079,7 @@ snapshot_sync_menu() {
 }
 
 plan_apply_menu() {
+files_menu() {
   ensure_whiptail
   load_config
   while true; do
@@ -1077,6 +1096,65 @@ plan_apply_menu() {
       3) services_menu ;;
       4) startup_menu ;;
       5) return ;;
+    choice=$(whiptail --title "TwinSync files" --menu "Choose an action:" 18 90 6 \
+      1 "Plan file changes (twin -> system)" \
+      2 "Apply file changes (twin -> system)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_file_changes ;;
+      2) apply_file_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+packages_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync packages" --menu "Choose an action:" 18 90 6 \
+      1 "Plan package changes (apt, twin -> system)" \
+      2 "Apply package changes (apt, twin -> system)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_package_changes ;;
+      2) apply_package_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+services_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync services" --menu "Choose an action:" 18 90 6 \
+      1 "Plan service changes (systemd, twin -> system)" \
+      2 "Apply service changes (systemd, twin -> system)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_service_changes ;;
+      2) apply_service_changes ;;
+      3) return ;;
+    esac
+  done
+}
+
+startup_menu() {
+  ensure_whiptail
+  load_config
+  while true; do
+    local choice
+    choice=$(whiptail --title "TwinSync startup" --menu "Choose an action:" 18 90 6 \
+      1 "Plan startup changes (user crontab)" \
+      2 "Apply startup changes (user crontab)" \
+      3 "Back to main menu" 3>&1 1>&2 2>&3) || return
+    case "$choice" in
+      1) plan_startup_changes ;;
+      2) apply_startup_changes ;;
+      3) return ;;
     esac
   done
 }
@@ -1160,6 +1238,15 @@ main_menu() {
       3 "Plan & apply changes" \
       4 "Time Machine / history" \
       5 "Exit" 3>&1 1>&2 2>&3) || exit 0
+    choice=$(whiptail --title "TwinSync" --menu "Choose an action:" 20 84 10 \
+      1 "Setup / utilities" \
+      2 "Snapshot / sync" \
+      3 "Files (plan/apply)" \
+      4 "Packages (plan/apply)" \
+      5 "Services (plan/apply)" \
+      6 "Startup (plan/apply)" \
+      7 "Time Machine / history" \
+      8 "Exit" 3>&1 1>&2 2>&3) || exit 0
 
     case "$choice" in
       1) setup_menu ;;
@@ -1167,6 +1254,12 @@ main_menu() {
       3) plan_apply_menu ;;
       4) time_machine_menu ;;
       5) exit 0 ;;
+      3) files_menu ;;
+      4) packages_menu ;;
+      5) services_menu ;;
+      6) startup_menu ;;
+      7) time_machine_menu ;;
+      8) exit 0 ;;
     esac
   done
 }
