@@ -6,6 +6,11 @@ TwinSync snapshots your system’s config, packages, services, startup and logs 
 That twin can optionally be pushed to a private GitHub repo so humans or AI can inspect, edit and propose fixes.
 TwinSync then shows a clear plan before safely applying those changes back to the real machine.
 
+## TwinSync++ direction
+
+The next major iteration ("TwinSync++") standardizes the repo layout around `state/`, `live/`, `logs/`, `plan/`, `plugins/`, and `schema/`, moves to a modular plugin system, and introduces a new `twin` CLI (`init`, `snapshot`, `plan`, `apply`, `status`, `logs`).
+See [`TWIN_SYNC_PLUS_SPEC.md`](TWIN_SYNC_PLUS_SPEC.md) for the full target design, including plugin metadata, YAML data models, and Home Assistant/logging support.
+
 ## What it does (v0.3)
 
 - **Local Git twin per device**
