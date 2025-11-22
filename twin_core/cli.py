@@ -18,7 +18,14 @@ def run_whiptail(args: List[str]) -> Tuple[int, str]:
     try:
         # Whiptail needs direct terminal access - use /dev/tty for stdin
         # and capture stderr for the actual output (whiptail writes to stderr by design)
-        with open('/dev/tty', 'r') as tty_in:
+        try:
+            tty_in = open('/dev/tty', 'r')
+        except (FileNotFoundError, OSError) as e:
+            print("ERROR: Cannot access /dev/tty. Whiptail menus require a terminal.", file=sys.stderr)
+            print(f"Details: {e}", file=sys.stderr)
+            return 1, "no terminal available"
+        
+        try:
             result = subprocess.run(
                 ["whiptail"] + args,
                 stdin=tty_in,
@@ -27,8 +34,10 @@ def run_whiptail(args: List[str]) -> Tuple[int, str]:
                 text=True,
                 check=False,
             )
-        # Whiptail outputs selection to stderr by design
-        return result.returncode, result.stderr.strip()
+            # Whiptail outputs selection to stderr by design
+            return result.returncode, result.stderr.strip()
+        finally:
+            tty_in.close()
     except FileNotFoundError:
         print("ERROR: whiptail not found. Install it with: sudo apt-get install whiptail", file=sys.stderr)
         return 1, "whiptail not found"
