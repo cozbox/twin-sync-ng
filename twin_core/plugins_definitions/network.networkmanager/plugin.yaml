@@ -1,0 +1,7 @@
+name: "network.networkmanager"
+kind: "config"
+provides:
+  state_fragments:
+    - "network"
+dependencies: []
+entrypoint: "twin_core.plugins_runtime.network_networkmanager:NetworkManagerPlugin"

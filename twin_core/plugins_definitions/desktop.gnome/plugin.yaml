@@ -1,0 +1,7 @@
+name: "desktop.gnome"
+kind: "config"
+provides:
+  state_fragments:
+    - "desktop"
+dependencies: []
+entrypoint: "twin_core.plugins_runtime.desktop_gnome:GnomeDesktopPlugin"

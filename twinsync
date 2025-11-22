@@ -18,6 +18,19 @@ DEFAULT_TWIN_REPO="${HOME}/twinsync-device"
 DEFAULT_FS_ROOTS="/etc ${HOME}/.config"
 
 TWIN_REPO=""
+
+if command -v python3 >/dev/null 2>&1; then
+    if python3 - <<'PY' >/dev/null 2>&1
+import importlib.util
+import sys
+
+spec = importlib.util.find_spec("twin_core")
+sys.exit(0 if spec else 1)
+PY
+    then
+        echo "[TwinSync++] Python twin engine detected. New 'twin' CLI is under development."
+    fi
+fi
 GITHUB_USER=""
 GITHUB_TOKEN=""
 GITHUB_DEVICE_REPO=""
