@@ -34,7 +34,6 @@ setup(
     name="twin-sync",
     version="0.0.0",
     description="TwinSync++ - Git-backed device configuration management",
-    author="TwinSync Contributors",
     python_requires=">=3.10",
     packages=find_packages(),
     install_requires=[
