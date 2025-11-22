@@ -1,13 +1,10 @@
 """TwinSync++ GUI using tkinter."""
 from __future__ import annotations
 
-import datetime
-import subprocess
 import sys
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
-from typing import Optional
 
 from . import config as config_module
 from . import core

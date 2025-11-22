@@ -613,12 +613,20 @@ def main(argv: list[str] | None = None) -> None:
                 print("Plan application complete")
             
         elif args.command == "status":
+            if verbose:
+                print("Checking drift status...")
             core.run_status()
+            if verbose:
+                print("Status check complete")
             
         elif args.command == "logs":
+            if verbose:
+                print("Loading logs...")
             core.run_logs()
             
         elif args.command == "config":
+            if verbose:
+                print("Loading configuration...")
             print(core.get_config_display())
             
         elif args.command == "config-fs":
@@ -632,10 +640,14 @@ def main(argv: list[str] | None = None) -> None:
             if has_whiptail and not (args.user and args.token and args.repo):
                 setup_github_menu()
             elif args.user and args.token and args.repo:
+                if verbose:
+                    print(f"Setting up GitHub integration for user '{args.user}'...")
                 success, msg = core.setup_github_remote(args.user, args.token, args.repo)
                 print(msg)
                 if not success:
                     sys.exit(1)
+                if verbose:
+                    print("GitHub setup complete")
             else:
                 print("Provide --user, --token, and --repo, or use whiptail menu")
                 sys.exit(1)
@@ -644,8 +656,12 @@ def main(argv: list[str] | None = None) -> None:
             if has_whiptail and not args.commit:
                 time_machine_menu()
             elif args.commit:
+                if verbose:
+                    print(f"Resetting to commit {args.commit}...")
                 if not core.reset_to_commit(args.commit):
                     sys.exit(1)
+                if verbose:
+                    print("Reset complete")
             else:
                 print("Provide --commit hash, or use whiptail menu")
                 sys.exit(1)
