@@ -1,3 +1,10 @@
+{
+  "name": "logs.files",
+  "kind": "logs",
+  "provides": {"logs_fragments": ["files"]},
+  "dependencies": [],
+  "entrypoint": "twin_core.plugins_runtime.logs_files:FilesLogsPlugin"
+}
 name: "logs.files"
 kind: "logs"
 provides:

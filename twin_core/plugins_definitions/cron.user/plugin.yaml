@@ -1,3 +1,10 @@
+{
+  "name": "cron.user",
+  "kind": "config",
+  "provides": {"state_fragments": ["cron"]},
+  "dependencies": [],
+  "entrypoint": "twin_core.plugins_runtime.cron_user:CronUserPlugin"
+}
 name: "cron.user"
 kind: "config"
 provides:
