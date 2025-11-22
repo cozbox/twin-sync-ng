@@ -5,3 +5,10 @@
   "dependencies": [],
   "entrypoint": "twin_core.plugins_runtime.home_assistant_core:HomeAssistantCorePlugin"
 }
+name: "home_assistant.core"
+kind: "config"
+provides:
+  state_fragments:
+    - "home_assistant"
+dependencies: []
+entrypoint: "twin_core.plugins_runtime.home_assistant_core:HomeAssistantCorePlugin"

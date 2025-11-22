@@ -5,3 +5,10 @@
   "dependencies": [],
   "entrypoint": "twin_core.plugins_runtime.files_mirror:MirrorFilesPlugin"
 }
+name: "files.mirror"
+kind: "config"
+provides:
+  state_fragments:
+    - "files"
+dependencies: []
+entrypoint: "twin_core.plugins_runtime.files_mirror:MirrorFilesPlugin"

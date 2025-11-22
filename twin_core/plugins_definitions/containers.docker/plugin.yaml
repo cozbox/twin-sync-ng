@@ -5,3 +5,10 @@
   "dependencies": [],
   "entrypoint": "twin_core.plugins_runtime.containers_docker:DockerContainersPlugin"
 }
+name: "containers.docker"
+kind: "config"
+provides:
+  state_fragments:
+    - "containers"
+dependencies: []
+entrypoint: "twin_core.plugins_runtime.containers_docker:DockerContainersPlugin"

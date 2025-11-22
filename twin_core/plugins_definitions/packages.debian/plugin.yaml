@@ -5,3 +5,10 @@
   "dependencies": [],
   "entrypoint": "twin_core.plugins_runtime.packages_debian:DebianPackagesPlugin"
 }
+name: "packages.debian"
+kind: "config"
+provides:
+  state_fragments:
+    - "packages"
+dependencies: []
+entrypoint: "twin_core.plugins_runtime.packages_debian:DebianPackagesPlugin"
